@@ -191,11 +191,9 @@ casa.register = function(Handlebars) {
 
     hb.registerHelper('new-password', (key, length, special) => {
         let l = 16
-        if (typeof(key) === 'string') {
-            passwords[key] = ''
-        } else {
-            key = passwordsCount.toString();
-        }
+        if (typeof(key) !== 'string') {
+            throw "missing key that is a unique string"
+        } 
 
         var pw = passwords[key];
 
@@ -216,15 +214,19 @@ casa.register = function(Handlebars) {
             }    
         }
 
-        special ||= "_-#@~[]=^:;"
+        if(!special) {
+            special = "_-#@~[]=^:;"
+        }
+
+        
 
         var pw = generate({
             length: l,
-            symbols: special,
+            symbols: special
         });
 
         passwords[key] = cryptr.encrypt(pw);
-        fs.writeFileSync(pwDb, JSON.stringify(passwords), "utf8");
+        fs.writeFileSync(pwDb, JSON.stringify(passwords, null, 4), "utf8");
 
         return pw;
     });

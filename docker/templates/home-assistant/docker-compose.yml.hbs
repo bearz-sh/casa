@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  home-assistant:
+    image: ${HA_IMAGE:-homeassistant/home-assistant}
+    container_name: ${HA_CONTAINER:-home-assistant}
+    restart: unless_stopped
+    environment:
+      - TZ=${TZ}
+    volumes:
+      - ./data:/config
+    labels:
+{{#if (get-env-bool "TRAEFIK_ENABLED")}}
+      - "traefik.enable=true"
+      - "traefik.http.routers.${HA_CONTAINER:-home-assistant}.rule=Host(`${HA_HOST:-ha.dev.lab}`)"
+      - "traefik.http.routers.${HA_CONTAINER:-home-assistant}.entrypoints=https"
+      - "traefik.http.routers.${HA_CONTAINER:-home-assistant}.tls=true"
+      - "traefik.http.services.${HA_CONTAINER:-home-assistant}.loadbalancer.server.port=8123"
+{{#if (get-env-bool "TRAEFIK_ACME")}}
+      - "traefik.http.routers.${HA_CONTAINER:-home-assistant}.tls.certresolver=acme"
+{{else}}
+      - "traefik.http.routers.${HA_CONTAINER:-home-assistant}.tls.domains[0].main=${HA_HOST:-ha.dev.lab}"
+{{/if}}
+      - "traefik.http.middlewares.${HA_CONTAINER:-home-assistant}.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.${HA_CONTAINER:-home-assistant}.redirectscheme.permanent=true"
+{{/if}}
+    ports:
+      - 8123:8123
+
+    networks:
+      docker-vnet:
+        ipv4_address: "${DOCKER_VNET_IP_BLOCK:-172.16}.${HA_IP_BLOCK:-0.15}"
+
+networks:
+  docker-vnet:
+    external: true
+    name: ${DOCKER_VNET_NAME}

@@ -1,7 +1,7 @@
 pwsh := if os() == 'windows' {
-  'pwsh.exe'
+    'pwsh.exe'
 } else {
-  '/usr/bin/env pwsh'
+    '/usr/bin/env pwsh'
 }
 
 setup:
@@ -25,6 +25,9 @@ setup:
           New-Item "$cwd/$d" -ItemType directory
         }
     }
+
+    sudo npm install -g hbs-cli
+    sudo npm install -g dotenv-cli
 
 create-network target='dev':
     #!{{pwsh}}
@@ -111,12 +114,20 @@ new-target target='dev' domain='dev.lab' ip='127.0.0.1':
         $content > "$cwd/etc/$target.env"
     }
 
-expand-template app target='dev':
+expand-template app target='dev' force='false':
     #!{{pwsh}}
     $ErrorActionPreference = 'stop'
     $cwd = "{{ justfile_directory() }}"
     $app = "{{ app }}"
     $target = "{{ target }}"
+    $force = "{{ force }}"
+
+    if ($force -eq "true" -or "$force" -eq "force") {
+        $force = $true 
+    
+    } else {
+        $force = $false;
+    }
 
     $templatesDir = (Resolve-Path "$cwd/templates/$app").Path 
     $appDir = "$cwd/apps/$target-$app"
@@ -127,28 +138,10 @@ expand-template app target='dev':
 
     $appDir = (Resolve-Path $appDir).Path 
 
-    $templates = @()
-    
-    Get-ChildItem "$templatesDir" -Recurse | Foreach-Object { 
-        if ($_.Extension -eq ".hbs") {
-            $templates += $_ 
-        } else {
-          if($_ -is [System.IO.DirectoryInfo]) {
-            continue 
-          }
-          
-          $dest = $_.FullName.Replace($templatesDir, $appDir) 
-
-
-
-          Copy-Item $_.FullName  $dest -Force 
-        
-        }
-    }
-
-    $rootEnv = "$cwd//etc/$target.env"
+    $rootEnv = "$cwd/etc/$target.env"
     $rootSecrets = "$cwd/etc/$target.secrets.env"
 
+    # load all environment files first
     $load = @();
     if((Test-Path $rootEnv)) {
       $load += $rootEnv
@@ -166,35 +159,79 @@ expand-template app target='dev':
 
     if(Test-Path $envFile)
     {
-        $output = hbs -H "$cwd/hbs/casa.js" "$envFile" --stdout 
         $dest = "$appDir/.env"
-        $output > $dest 
+        if ((!(Test-Path $dest)) -or $force) {
+            $output = hbs -H "$cwd/hbs/casa.js" "$envFile" --stdout 
+            $output > $dest 
+        }
+
+      
         $load +=  (Resolve-Path $dest).Path
     }
 
     $secretsEnvFile = "$templatesDir/secrets.env.hbs"
     if(Test-Path $secretsEnvFile)
     {
-        $output = hbs -H "$cwd/hbs/casa.js" "$secretsEnvFile" --stdout 
         $dest = "$appDir/secrets.env"
-        $output > $dest 
+        if ((!(Test-Path $dest)) -or $force) {
+            $output = hbs -H "$cwd/hbs/casa.js" "$secretsEnvFile" --stdout 
+            $output > $dest 
+        }
+        
         $load +=  (Resolve-Path $dest).Path
     }
 
+    
     if ($load.Length -gt 0) {
         & "$cwd/bin/get-env.ps1" -Files $load 
+    }
+
+    $templates = @()
+    
+    
+    Get-ChildItem "$templatesDir" -Recurse | Foreach-Object { 
+        Write-Host $_.FullName
+        if ($_.Extension -eq ".hbs") {
+            $templates += $_ 
+        } else {
+            if($_ -is [System.IO.DirectoryInfo]) {
+                return
+            }
+            
+            $dest = $_.FullName.Replace($templatesDir, $appDir) 
+            if ((!(Test-Path $dest)) -or $force) {
+                $parentDir = $dest | Split-Path -Parent 
+                if (!(Test-Path $parentDir)) {
+                    New-Item $parentDir -ItemType Directory
+                }
+
+
+
+                Copy-Item $_.FullName  $dest -Force 
+            }
+        }
     }
 
     foreach($file in $templates)
     {
         if ($file.Name -eq "target.env.hbs" -or $file.Name -eq "secrets.env.hbs") {
-          continue
+            continue
         }
 
-        $f = $file.FullName 
+        $f = $file.FullName
         $dest = $f.Substring(0, $f.Length - 4)
-        $output = hbs -H "$cwd/hbs/casa.js" "$f" --stdout 
-        $output > $dest
+        $dest = $dest.Replace($templatesDir, $appDir)
+        if ((!(Test-Path $dest)) -or $force) {
+            Write-host "$f => $dest"
+
+            $parentDir = $dest | Split-Path -Parent 
+            if (!(Test-Path $parentDir)) {
+                New-Item $parentDir -ItemType Directory
+            }
+
+            $output = hbs -H "$cwd/hbs/casa.js" "$f" --stdout 
+            $output > $dest
+        }
     }
 
 list-available:
@@ -220,7 +257,7 @@ list:
     }
 
 stop app target='dev':
-     #!{{pwsh}}
+    #!{{pwsh}}
     $ErrorActionPreference = 'stop'
     $cwd = "{{ justfile_directory() }}"
     $app = "{{ app }}"
@@ -243,7 +280,7 @@ stop app target='dev':
     }
 
 start app target='dev':
-     #!{{pwsh}}
+    #!{{pwsh}}
     $ErrorActionPreference = 'stop'
     $cwd = "{{ justfile_directory() }}"
     $app = "{{ app }}"
@@ -266,7 +303,7 @@ start app target='dev':
     }
 
 restart app target='dev':
-     #!{{pwsh}}
+    #!{{pwsh}}
     $ErrorActionPreference = 'stop'
     $cwd = "{{ justfile_directory() }}"
     $app = "{{ app }}"
@@ -327,6 +364,10 @@ up app target='dev':
 
     Set-Content -Path "$appDir/compiled.env" -Value $Content  -Encoding "Utf8NoBom"
 
+    if((Test-Path "$appDir/up.ps1")) {
+        & "$appDir/up.ps1"
+    }
+
     $splat += "--env-file"
     $splat += "$appDir/compiled.env"
 
@@ -360,10 +401,12 @@ down app target='dev':
         throw [IO.FileNotFoundException] "compose file not found for $app at $composeFile"
     }
 
+    if ((Test-Path "$appDir/down.ps1")) {
+        & "$appDir/down.ps1"
+    }
+
     if($IsWindows) {
         docker @splat 
     } else {
         sudo docker @splat  
     }
-
-    

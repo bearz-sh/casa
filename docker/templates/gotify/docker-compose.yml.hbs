@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  gotify:
+    image: ${GOTIFY_IMAGE:-gotify/server}
+    container_name: ${GOTIFY_CONTAINER:-gotify}
+    restart: unless-stopped
+    volumes:
+      - "./data:/app/data"
+    environment:
+      - GOTIFY_DEFAULTUSER_PASS=${GOTIFY_DEFAULTUSER_PASS:-CHANGEm3}
+      - TZ=${TZ}
+{{#if (get-env-bool "DEBUG")}}
+    ports:
+      - "11180:80"
+{{/if}}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${GOTIFY_CONTAINER:-gotify}.rule=Host(`${GOTIFY_HOST:-gotify.dev.lab}`)"
+      - "traefik.http.routers.${GOTIFY_CONTAINER:-gotify}.entrypoints=https"
+      - "traefik.http.routers.${GOTIFY_CONTAINER:-gotify}.tls=true"
+{{#if (get-env-bool "TRAEFIK_ACME")}}
+      - "traefik.http.routers.${GOTIFY_CONTAINER:-gotify}.tls.certresolver=acme"
+{{/if}}
+      
+      # Watchtower Update
+      - "com.centurylinklabs.watchtower.enable=true"
+    networks:
+      docker-vnet:
+        ipv4_address: "${DOCKER_VNET_IP_BLOCK:-172.16}.${GOTIFY_IP_BLOCK:-0.14}"
+
+networks:
+  docker-vnet:
+    external: true
+    name: ${DOCKER_VNET_NAME}

@@ -1,9 +1,11 @@
 # !/bin/bash
 
 BWD=$(dirname $(realpath $0))
+echo $BWD
 
-if [ "$(lsb_release -is)" -eq 'Ubuntu' ]; then 
-    $dir = "$BWD/../devices/ubuntu/core"
+
+if [ "$(lsb_release -is)" == 'Ubuntu' ]; then 
+    dir="$BWD/../devices/ubuntu/core"
 
     sudo bash "$dir/install-node.sh"
     sudo bash "$dir/install-just.sh"
@@ -14,13 +16,13 @@ if [ "$(lsb_release -is)" -eq 'Ubuntu' ]; then
 
     if ! command -v hsb &> /dev/null; then
         sudo yarn global install hsb-cli --prefix /usr/local
-    fi 
+    fi
 
     if ! command -v dotenv &> /dev/null; then
         sudo yarn global install dotenv-cli --prefix /usr/local
-    fi 
+    fi
 
     if [ ! -d "./node_modules" ]; then
         yarn install 
-    if
-fi 
+    fi
+fi

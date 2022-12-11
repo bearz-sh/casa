@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  rustdesk-server:
+    image: rustdesk/rustdesk-server-s6:latest
+    container_name: rustdesk-server
+    ports:
+      - 21115:21115
+      - 21116:21116
+      - 21116:21116/udp
+      - 21117:21117
+      - 21118:21118
+      - 21119:21119
+
+    environment:
+      - "RELAY=rustdesk.example.com:21117"
+      - "ENCRYPTED_ONLY=1"
+      - "DB_URL=/db/db_v2.sqlite3"
+      - "KEY_PRIV=FR2j78IxfwJNR+HjLluQ2Nh7eEryEeIZCwiQDPVe+PaITKyShphHAsPLn7So0OqRs92nGvSRdFJnE2MSyrKTIQ=="
+      - "KEY_PUB=iEyskoaYRwLDy5+0qNDqkbPdpxr0kXRSZxNjEsqykyE="
+    volumes:
+      - ./data:/db
+    restart: unless-stopped
+    networks:
+      docker-vnet:
+        ipv4_address: "${DOCKER_VNET_IP_BLOCK:-172.16}.${TRAEFIK_IP_BLOCK:-0.2}"
+
+networks:
+  docker-vnet:
+    external: true
+    name: ${DOCKER_VNET_NAME}

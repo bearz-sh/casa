@@ -1,0 +1,57 @@
+version: "3.8"
+
+services:
+  vault:
+    image: ${VAULT_IMAGE:-vault:latest}
+    container_name: ${VAULT_CONTAINER:-vault}
+    hostname: ${VAULT_CONTAINER:-vault}
+    command:
+      - vault
+      -   server
+      -   -config=/config/config.json
+    environment:
+      - VAULT_ADDR=http://127.0.0.1:8200
+      - VAULT_API_ADDR=http://127.0.0.1:8200
+      - PUID=0
+      - GUID=0
+    cap_add:
+      - IPC_LOCK
+    expose:
+      - 8200
+    ports:
+      - "8200:8200"
+    volumes:
+      - ./data/vault:/vault/file:rw
+      - ./etc:/config:rw
+    labels:
+{{#if (get-env-bool "TRAEFIK_ENABLED")}}
+      - "traefik.enable=true"
+      - "traefik.http.routers.${VAULT_CONTAINER:-vault}.rule=Host(`${VAULT_HOST:-vault.dev.lab}`)"
+      - "traefik.http.routers.${VAULT_CONTAINER:-vault}.entrypoints=https"
+      - "traefik.http.routers.${VAULT_CONTAINER:-vault}.tls=true"
+      - "traefik.http.services.${VAULT_CONTAINER:-vault}.loadbalancer.server.port=8200"
+{{#if (get-env-bool "TRAEFIK_ACME")}}
+      - "traefik.http.routers.${VAULT_CONTAINER:-vault}.tls.certresolver=acme"
+{{/if}}
+{{/if}}
+    networks:
+      docker-vnet:
+        ipv4_address: "${DOCKER_VNET_IP_BLOCK:-172.16}.${VAULT_IP_BLOCK:-0.8}"
+
+  vault-client:
+    build: .
+    container_name: ${VAULT_CLIENT_CONTAINER:-vault-client}
+    environment: 
+      - VAULT_HOST=${VAULT_CONTAINER:-vault}
+      - VAULT_CLIENT_SLEEP=${VAULT_CLIENT_SLEEP}
+      - PUID=0
+      - GUID=0
+    volumes:
+      - ./data/keys:/data/keys:rw
+    networks:
+      - docker-vnet
+
+networks:
+  docker-vnet:
+    external: true
+    name: ${DOCKER_VNET_NAME}
