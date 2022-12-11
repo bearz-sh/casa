@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "bcrypt": "^5.1.0",
+    "cryptr": "^6.0.3",
+    "generate-password": "^1.7.0",
+    "shelljs": "^0.8.5"
+  }
+}

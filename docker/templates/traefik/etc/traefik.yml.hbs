@@ -1,0 +1,47 @@
+api:
+  dashboard: true
+  insecure: true
+
+{{#if (get-env-bool "DEBUG")}}
+log:
+  level: DEBUG
+{{else}}
+log:
+  level: ERROR
+{{/if}}
+
+entryPoints:
+  http:
+    address: ":80"
+  https:
+    address: ":443"
+
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    watch: true
+    network: dev-vnet
+  file:
+    filename: /etc/traefik/certs/certs.yml
+    watch: true
+
+{{#if (get-env-bool "TRAEFIK_ACME")}}
+certificatesResolvers:
+  myresolver:
+    acme:
+      email: {{get-env "ACME_EMAIL"}}
+      storage: acme.json
+      caServer = {{get-env "ACME_SERVER"}}
+      onHostRule = true
+      httpChallenge:
+        # used during the challenge
+        entryPoint: https
+      dnsChallenge:
+        provider: {{get-env "TRAEFIK_ACME_PROVIDER"}}
+        delayBeforeCheck: 0
+      resolvers:
+        - "1.1.1.1:53"
+        - "1.1.1.2:53"
+
+{{/if}}

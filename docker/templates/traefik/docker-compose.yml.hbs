@@ -1,0 +1,42 @@
+version: '3.7'
+
+services:
+  traefik:
+    image: ${TRAEFIK_IMAGE:-traefik:latest}
+    container_name: ${TRAEFIK_CONTAINER:-traefik}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - 80:80
+      - 443:443
+      - 8080:8080
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      {{if (get-env-bool "TRAEFIK_ACME")}}
+      - ./etc/acme.json:acme.json:ro
+      {{/if}}
+      - ./etc/traefik.yml:/traefik.yml:ro
+      {{if (get-env-bool "TRAEFIK_CERTS_ENABLED")}}
+      - ./etc/certs.yml:/etc/traefik/certs/certs.yml:ro
+      {{/if}}
+    environment:
+      {{get-env "TRAEFIK_ENV"}}
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik_https.rule=Host(`${TRAEFIK_HOST:-traefik.dev.lab}`)"
+      - "traefik.http.routers.traefik_https.entrypoints=https"
+      - "traefik.http.routers.traefik_https.tls=true"
+      - "traefik.http.routers.traefik_https.tls.domains[0].main=${TRAEFIK_HOST:-traefik.dev.lab}"
+      - "traefik.http.routers.traefik_https.service=api@internal"
+      - "traefik.http.middlewares.traefik_https.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.traefik_https.redirectscheme.permanent=true"
+
+    networks:
+      docker-vnet:
+        ipv4_address: "${DOCKER_VNET_IP_BLOCK:-172.16}.${TRAEFIK_IP_BLOCK:-0.2}"
+
+networks:
+  docker-vnet:
+    external: true
+    name: ${DOCKER_VNET_NAME}

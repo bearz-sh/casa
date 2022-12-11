@@ -1,0 +1,369 @@
+pwsh := if os() == 'windows' {
+  'pwsh.exe'
+} else {
+  '/usr/bin/env pwsh'
+}
+
+setup:
+    #!{{pwsh}}
+    $ErrorActionPreference = 'stop'
+    $cwd = "{{ justfile_directory() }}"
+    $dirs = @(
+      "apps",
+      "etc",
+      "etc/secrets",
+      "etc/certs",
+      "var",
+      "var/cache",
+      "var/run",
+      "var/tmp",
+      "var/log"
+    )
+
+    foreach($d in $dirs) {
+        if(!(Test-Path $d)) {
+          New-Item "$cwd/$d" -ItemType directory
+        }
+    }
+
+create-network target='dev':
+    #!{{pwsh}}
+    $ErrorActionPreference = 'stop'
+    $cwd = "{{ justfile_directory() }}"
+    $target = "{{ target }}"
+
+    & "$cwd/bin/get-env.ps1" -Files "$cwd/etc/$target.env"
+
+    $splat = @(
+        "network",
+        "create",
+        "--driver=bridge",
+        "--subnet=$($Env:DOCKER_VNET_IP_RANGE)",
+        "--gateway=$($Env:DOCKER_VNET_IP_GATEWAY)",
+        "$($Env:DOCKER_VNET_NAME)"
+    )
+
+    if ($IsWindows) {
+        docker @splat
+    } else {
+        sudo docker @splat
+    }
+
+mkcert target='dev':
+    #!{{pwsh}}
+    $ErrorActionPreference = 'stop'
+    $cwd = "{{ justfile_directory() }}"
+    $target = "{{ target }}"
+    $certs = "$cwd/etc/certs"
+    if (!(Test-Path $certs)) {
+        New-Item $certs -ItemType Directory
+    }
+
+    & "$cwd/bin/get-env.ps1" -Files "$cwd/etc/$target.env"
+    
+    if(!$Env:NET_DOMAIN) {
+        Write-Warning "setting NET_DOMAIN to dev.lab"
+        $Env:NET_DOMAIN = "dev.lab"
+    }
+
+    $domain = $Env:NET_DOMAIN
+
+    $pem = "$certs/$domain.pem"
+
+    if (!(Test-Path $pem)) {
+        Write-Host "mkcert -key-file '$certs/$domain.key' -cert-file '$pem' '$domain' '*.$($domain)'"
+        mkcert -key-file "$certs/$domain.key" -cert-file "$pem" "$domain" "*.$($domain)"
+    }
+
+    $chainPem = "$certs/$domain-chain.pem"
+
+    if (!(Test-Path $chainPem)) {
+       cat $pem "$(mkcert -CAROOT)/rootCA.pem" > $chainPem
+    }
+
+    $pem = "$certs/cert.pem"
+    $key = "$certs/cert.key"
+
+    if (!(Test-Path $pem)) {
+        Copy-Item "$chainPem"  $pem 
+    }
+
+    if (!(Test-Path $key)) {
+        Copy-Item "$certs/$domain.key"  $key 
+    }
+
+new-target target='dev' domain='dev.lab' ip='127.0.0.1':
+    #!{{pwsh}}
+    $ErrorActionPreference = 'stop'
+    $cwd = "{{ justfile_directory() }}"
+
+    $target = "{{ target }}"
+    $envFile = "$cwd/etc/$target.env"
+
+    $env:TARGET = $target
+    $env:DOMAIN = "{{ domain }}"
+    $env:IP = "{{ ip }}"
+
+    if(!(Test-Path $envFile)) {
+        write-host "running hbs"
+        write-host "$envFile"
+        $content = hbs --H "$cwd/hbs/casa.js" "$cwd/target.env.hbs" --stdout
+        $content > "$cwd/etc/$target.env"
+    }
+
+expand-template app target='dev':
+    #!{{pwsh}}
+    $ErrorActionPreference = 'stop'
+    $cwd = "{{ justfile_directory() }}"
+    $app = "{{ app }}"
+    $target = "{{ target }}"
+
+    $templatesDir = (Resolve-Path "$cwd/templates/$app").Path 
+    $appDir = "$cwd/apps/$target-$app"
+
+    if (!(Test-Path $appDir)) {
+        New-Item $appDir -ItemType Directory
+    }
+
+    $appDir = (Resolve-Path $appDir).Path 
+
+    $templates = @()
+    
+    Get-ChildItem "$templatesDir" -Recurse | Foreach-Object { 
+        if ($_.Extension -eq ".hbs") {
+            $templates += $_ 
+        } else {
+          if($_ -is [System.IO.DirectoryInfo]) {
+            continue 
+          }
+          
+          $dest = $_.FullName.Replace($templatesDir, $appDir) 
+
+
+
+          Copy-Item $_.FullName  $dest -Force 
+        
+        }
+    }
+
+    $rootEnv = "$cwd//etc/$target.env"
+    $rootSecrets = "$cwd/etc/$target.secrets.env"
+
+    $load = @();
+    if((Test-Path $rootEnv)) {
+      $load += $rootEnv
+    }
+
+    if ((Test-Path $rootSecrets)) {
+      $load += rootSecrets
+    }
+
+    if ($load.Length -gt 0) {
+        & "$cwd/bin/get-env.ps1" -Files $load
+    }
+
+    $envFile = "$templatesDir/target.env.hbs"
+
+    if(Test-Path $envFile)
+    {
+        $output = hbs -H "$cwd/hbs/casa.js" "$envFile" --stdout 
+        $dest = "$appDir/.env"
+        $output > $dest 
+        $load +=  (Resolve-Path $dest).Path
+    }
+
+    $secretsEnvFile = "$templatesDir/secrets.env.hbs"
+    if(Test-Path $secretsEnvFile)
+    {
+        $output = hbs -H "$cwd/hbs/casa.js" "$secretsEnvFile" --stdout 
+        $dest = "$appDir/secrets.env"
+        $output > $dest 
+        $load +=  (Resolve-Path $dest).Path
+    }
+
+    if ($load.Length -gt 0) {
+        & "$cwd/bin/get-env.ps1" -Files $load 
+    }
+
+    foreach($file in $templates)
+    {
+        if ($file.Name -eq "target.env.hbs" -or $file.Name -eq "secrets.env.hbs") {
+          continue
+        }
+
+        $f = $file.FullName 
+        $dest = $f.Substring(0, $f.Length - 4)
+        $output = hbs -H "$cwd/hbs/casa.js" "$f" --stdout 
+        $output > $dest
+    }
+
+list-available:
+    #!{{pwsh}}
+    $ErrorActionPreference = 'stop'
+    $cwd = "{{ justfile_directory() }}"
+    $appsDir = "$cwd/templates"
+    $children = Get-ChildItem $appsDir
+    foreach($c in $children)
+    {
+        Write-Host $c.Name
+    }
+
+list:
+    #!{{pwsh}}
+    $ErrorActionPreference = 'stop'
+    $cwd = "{{ justfile_directory() }}"
+    $appsDir = "$cwd/apps"
+    $children = Get-ChildItem $appsDir
+    foreach($c in $children)
+    {
+        Write-Host $c.Name
+    }
+
+stop app target='dev':
+     #!{{pwsh}}
+    $ErrorActionPreference = 'stop'
+    $cwd = "{{ justfile_directory() }}"
+    $app = "{{ app }}"
+    $target = "{{ target }}"
+    $appDir = "$cwd/apps/$target-$app"
+    $composeFile = "$appDir/docker-compose.yml"
+
+    $splat = @("compose", "-f", "$composeFile")
+    $splat += "--env-file"
+    $splat += "$appDir/compiled.env"
+    $splat += "stop"
+    if (!(Test-Path $composeFile)) {
+        throw [IO.FileNotFoundException] "compose file not found for $app at $composeFile"
+    }
+
+    if($IsWindows) {
+        docker @splat 
+    } else {
+        sudo docker @splat  
+    }
+
+start app target='dev':
+     #!{{pwsh}}
+    $ErrorActionPreference = 'stop'
+    $cwd = "{{ justfile_directory() }}"
+    $app = "{{ app }}"
+    $target = "{{ target }}"
+    $appDir = "$cwd/apps/$target-$app"
+    $composeFile = "$appDir/docker-compose.yml"
+
+    $splat = @("compose", "-f", "$composeFile")
+    $splat += "--env-file"
+    $splat += "$appDir/compiled.env"
+    $splat += "start"
+    if (!(Test-Path $composeFile)) {
+        throw [IO.FileNotFoundException] "compose file not found for $app at $composeFile"
+    }
+
+    if($IsWindows) {
+        docker @splat 
+    } else {
+        sudo docker @splat  
+    }
+
+restart app target='dev':
+     #!{{pwsh}}
+    $ErrorActionPreference = 'stop'
+    $cwd = "{{ justfile_directory() }}"
+    $app = "{{ app }}"
+    $target = "{{ target }}"
+    $appDir = "$cwd/apps/$target-$app"
+    $composeFile = "$appDir/docker-compose.yml"
+
+    $splat = @("compose", "-f", "$composeFile")
+    $splat += "--env-file"
+    $splat += "$appDir/compiled.env"
+    $splat += "restart"
+    if (!(Test-Path $composeFile)) {
+        throw [IO.FileNotFoundException] "compose file not found for $app at $composeFile"
+    }
+
+    if($IsWindows) {
+        docker @splat 
+    } else {
+        sudo docker @splat  
+    } 
+
+up app target='dev':
+    #!{{pwsh}}
+    $ErrorActionPreference = 'stop'
+    $cwd = "{{ justfile_directory() }}"
+    $app = "{{ app }}"
+    $target = "{{ target }}"
+
+    $appDir = "$cwd/apps/$target-$app"
+    $composeFile = "$appDir/docker-compose.yml"
+
+    if (!(Test-Path $composeFile)) {
+        throw [IO.FileNotFoundException] "compose file not found for $app at $composeFile"
+    }
+
+    $projectName = "$target-$app"
+    $splat = @("compose")
+
+    $envFiles = @(
+        "$cwd/etc/$target.env",
+        "$cwd/etc/$target.secrets.env"
+        "$appDir/.env",
+        "$appDir/secrets.env"
+    )
+
+    $splat += "-f"
+    $splat += $composeFile
+
+    $splat += "--project-name"
+    $splat += $projectName
+    $load = @();
+    $content = ""
+    foreach($e in $envFiles) {
+        if ((Test-Path $e)) {
+            $Content += Get-Content $e -Raw 
+        }
+    }
+
+    Set-Content -Path "$appDir/compiled.env" -Value $Content  -Encoding "Utf8NoBom"
+
+    $splat += "--env-file"
+    $splat += "$appDir/compiled.env"
+
+
+    $splat += "up"
+    $splat += "--no-recreate"
+    $splat += "--wait"
+
+    write-host "sudo docker $($splat -join ' ')"
+
+    if ($IsWindows) {
+        docker @splat
+    } else {
+        sudo docker @splat 
+    }
+
+down app target='dev':
+    #!{{pwsh}}
+    $ErrorActionPreference = 'stop'
+    $cwd = "{{ justfile_directory() }}"
+    $app = "{{ app }}"
+    $target = "{{ target }}"
+    $appDir = "$cwd/apps/$target-$app"
+    $composeFile = "$appDir/docker-compose.yml"
+
+    $splat = @("compose", "-f", "$composeFile")
+    $splat += "--env-file"
+    $splat += "$appDir/compiled.env"
+    $splat += "down"
+    if (!(Test-Path $composeFile)) {
+        throw [IO.FileNotFoundException] "compose file not found for $app at $composeFile"
+    }
+
+    if($IsWindows) {
+        docker @splat 
+    } else {
+        sudo docker @splat  
+    }
+
+    

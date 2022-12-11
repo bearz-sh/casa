@@ -1,0 +1,6 @@
+{{#if (get-env-bool "TRAEFIK_CERTS_ENABLED")}}
+tls:
+  certificates:
+    - certFile: /etc/certs/cert.pem
+      keyFile: /etc/certs/cert.key
+{{/if}}
