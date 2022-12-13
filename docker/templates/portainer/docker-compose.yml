@@ -1,0 +1,40 @@
+version: '3.9'
+
+services:
+  portainer:
+    image: ${PORT_IMAGE:-portainer/portainer-ce:latest}
+    container_name: ${PORT_CONTAINER:-portainer}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - TZ="${TZ}"
+{{#if (get-env-bool "DEBUG")}}
+    ports:
+      - 8000:8000
+      - 9443:9443
+{{/if}}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data:/data
+    ports:
+      - 9000:9000
+    labels:
+{{#if (get-env-bool "TRAEFIK_ENABLED")}}
+      - "traefik.enable=true"
+      - "traefik.http.routers.${PORT_CONTAINER:-portainer}.rule=Host(`${PORT_HOST:-portainer.dev.lab}`)"
+      - "traefik.http.routers.${PORT_CONTAINER:-portainer}.entrypoints=https"
+      - "traefik.http.routers.${PORT_CONTAINER:-portainer}.tls=true"
+      - "traefik.http.services.${PORT_CONTAINER:-portainer}.loadbalancer.server.port=8000"
+{{#if (get-env-bool "TRAEFIK_ACME")}}
+      - "traefik.http.routers.${PORT_CONTAINER:-vault}.tls.certresolver=acme"
+{{/if}}
+{{/if}}
+    networks:
+      docker-vnet:
+        ipv4_address: "${DOCKER_VNET_IP_BLOCK:-172.16}.${PORT_IP_BLOCK:-0.3}"
+
+networks:
+  docker-vnet:
+    external: true
+    name: ${DOCKER_VNET_NAME}

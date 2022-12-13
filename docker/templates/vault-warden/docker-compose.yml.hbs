@@ -4,17 +4,17 @@ services:
   vaultwarden:
     image: ${VW_IMAGE:-vaultwarden/server:latest}
     container_name: ${VW_CONTAINER:-vault-warden}
-    restart: unless_stopped
+    restart: unless-stopped
     environment:
-      - WEBSOCKET_ENABLED=${VW_WEBSOCKET_ENABLED}
-      - WEB_VAULT_ENABLED=${VW_WEB_VAULT_ENABLED}
-      - SIGNUPS_ALLOWED=${VW_SIGNUPS_ALLOWED}
-      - ADMIN_TOKEN=${VW_ADMIN_TOKEN}
+      - WEBSOCKET_ENABLED=${VW_WEBSOCKET_ENABLED:-true}
+      - WEB_VAULT_ENABLED=${VW_WEB_VAULT_ENABLED:-true}
+      - SIGNUPS_ALLOWED=${VW_SIGNUPS_ALLOWED:-false}
+      - ADMIN_TOKEN=${VW_ADMIN_TOKEN:-CHANGEm3!}
     volumes:
-      - ./data:/data
+      - ./data:/data:rw
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.${VW_CONTAINER:-vault-warden}.rule=Host(`${VW_HOST:vault-warden.dev.labs}`)"
+      - "traefik.http.routers.${VW_CONTAINER:-vault-warden}.rule=Host(`${VW_HOST:-vault-warden.dev.labs}`)"
       - "traefik.http.routers.${VW_CONTAINER:-vault-warden}.entrypoints=https"
       - "traefik.http.routers.${VW_CONTAINER:-vault-warden}.tls=true"
 {{#if (get-env-bool "TRAEFIK_ACME")}}

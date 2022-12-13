@@ -214,7 +214,7 @@ casa.register = function(Handlebars) {
             }    
         }
 
-        if(!special) {
+        if(typeof(special) !== 'string' || special.trim().length === 0) {
             special = "_-#@~[]=^:;"
         }
 
@@ -224,6 +224,8 @@ casa.register = function(Handlebars) {
             length: l,
             symbols: special
         });
+
+        
 
         passwords[key] = cryptr.encrypt(pw);
         fs.writeFileSync(pwDb, JSON.stringify(passwords, null, 4), "utf8");

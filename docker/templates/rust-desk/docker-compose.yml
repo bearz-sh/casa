@@ -23,7 +23,7 @@ services:
     restart: unless-stopped
     networks:
       docker-vnet:
-        ipv4_address: "${DOCKER_VNET_IP_BLOCK:-172.16}.${TRAEFIK_IP_BLOCK:-0.2}"
+        ipv4_address: "${DOCKER_VNET_IP_BLOCK:-172.16}.${RUSTDESK_IP_BLOCK:-0.20}"
 
 networks:
   docker-vnet:

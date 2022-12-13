@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  prometheus:
+    image: ${PROM_IMAGE}
+    container_name: ${PROM_CONTAINER}
+    restart: unless-stopped
+    ports:
+      - 9090
+    volumes:
+      - ./etc:/etc/prometheus
+    networks:
+      docker-vnet:
+        ipv4_address: "${DOCKER_VNET_IP_BLOCK:-172.16}.${RUSTDESK_IP_BLOCK:-0.1}"
+
+networks:
+  docker-vnet:
+    external: true
+    name: ${DOCKER_VNET_NAME}
